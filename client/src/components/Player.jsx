@@ -7,7 +7,7 @@ const SPEED = 5;
 const ROTATION_SPEED = 3;
 const PLAYER_RADIUS = 0.3;
 
-const Player = ({ mazeData, size, setGameState, onPositionChange }) => {
+const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef }) => {
   const meshRef = useRef();
   const { camera } = useThree();
 
@@ -50,6 +50,13 @@ const Player = ({ mazeData, size, setGameState, onPositionChange }) => {
     if (keys.current.a) rotChange += ROTATION_SPEED * delta;
     if (keys.current.d) rotChange -= ROTATION_SPEED * delta;
 
+    // Joystick Rotation (X axis)
+    if (joystickRef && joystickRef.current) {
+      // Joystick X is usually -1 (left) to 1 (right)
+      // We want left (-1) to ADD rotation (positive rotChange)
+      rotChange -= joystickRef.current.x * ROTATION_SPEED * delta;
+    }
+
     const newRotation = rotation + rotChange;
     if (rotChange !== 0) {
       setRotation(newRotation);
@@ -63,6 +70,16 @@ const Player = ({ mazeData, size, setGameState, onPositionChange }) => {
 
     if (keys.current.w) moveVec.add(forward);
     if (keys.current.s) moveVec.sub(forward);
+
+    // Joystick Movement (Y axis)
+    if (joystickRef && joystickRef.current) {
+      // Joystick Y is usually -1 (bottom) to 1 (top)
+      // We want top (1) to move forward
+      const joyY = joystickRef.current.y;
+      if (Math.abs(joyY) > 0.1) { // Deadzone
+        moveVec.add(forward.clone().multiplyScalar(joyY));
+      }
+    }
 
     const isMoving = moveVec.lengthSq() > 0;
 
