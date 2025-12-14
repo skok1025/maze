@@ -37,6 +37,8 @@ function App() {
     console.log('App mounted');
   }, []);
 
+  const joystickRef = React.useRef({ x: 0, y: 0 });
+
   return (
     <div className="app-container">
       {gameState === 'start' && (
@@ -47,13 +49,14 @@ function App() {
       )}
       {gameState === 'playing' && (
         <>
-          <GameScene stage={stage} setGameState={setGameState} hintActive={hintActive} />
+          <GameScene stage={stage} setGameState={setGameState} hintActive={hintActive} joystickRef={joystickRef} />
           <UI
             stage={stage}
             hints={hints}
             activateHint={activateHint}
             hintActive={hintActive}
             hintTimeLeft={hintTimeLeft}
+            joystickRef={joystickRef}
           />
         </>
       )}
