@@ -1,4 +1,5 @@
-body, html {
+body,
+html {
   margin: 0;
   padding: 0;
   width: 100%;
@@ -22,6 +23,8 @@ body, html {
   top: 0;
   left: 0;
   width: 100%;
+  height: 100%;
+  box-sizing: border-box;
   padding: 20px;
   pointer-events: none;
   display: flex;
@@ -39,7 +42,8 @@ body, html {
   cursor: pointer;
 }
 
-.start-screen, .win-screen {
+.start-screen,
+.win-screen {
   position: absolute;
   top: 0;
   left: 0;
@@ -54,12 +58,14 @@ body, html {
   z-index: 10;
 }
 
-.start-screen h1, .win-screen h1 {
+.start-screen h1,
+.win-screen h1 {
   font-size: 48px;
   margin-bottom: 20px;
 }
 
-.start-screen button, .win-screen button {
+.start-screen button,
+.win-screen button {
   padding: 15px 30px;
   font-size: 24px;
   cursor: pointer;
