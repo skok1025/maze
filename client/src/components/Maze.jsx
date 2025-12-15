@@ -5,7 +5,7 @@ import { Text } from '@react-three/drei';
 const WALL_HEIGHT = 2;
 const CELL_SIZE = 2;
 
-const Maze = ({ mazeData, size, theme, hintItems }) => {
+const Maze = ({ mazeData, size, theme, hintItems, wingItem }) => {
     const walls = useMemo(() => {
         const wallGeometries = [];
         const wallMaterial = new THREE.MeshStandardMaterial({ color: theme.wall });
@@ -152,6 +152,28 @@ const Maze = ({ mazeData, size, theme, hintItems }) => {
                     {/* Simple bobbing animation could be added here if we made this a separate component */}
                 </mesh>
             ))}
+
+            {/* Wing Item */}
+            {wingItem && (
+                <mesh
+                    key="wing-item"
+                    position={[wingItem.x * CELL_SIZE, 0.5, wingItem.y * CELL_SIZE]}
+                    castShadow
+                >
+                    <sphereGeometry args={[0.3, 16, 16]} />
+                    <meshStandardMaterial color="cyan" emissive="cyan" emissiveIntensity={0.5} />
+                    <Text
+                        position={[0, 0.8, 0]}
+                        fontSize={0.5}
+                        color="white"
+                        anchorX="center"
+                        anchorY="middle"
+                        billboard
+                    >
+                        Fly!
+                    </Text>
+                </mesh>
+            )}
 
             {/* Exit Marker */}
             <mesh position={[(size - 1) * CELL_SIZE, 1, (size - 1) * CELL_SIZE]}>

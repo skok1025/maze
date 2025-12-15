@@ -7,7 +7,7 @@ const SPEED = 5;
 const ROTATION_SPEED = 3;
 const PLAYER_RADIUS = 0.3;
 
-const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, activeHint, collisionEffect, hintItems, onCollectHint }) => {
+const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, activeHint, collisionEffect, hintItems, onCollectHint, wingItem, onCollectWing, setFlyTimeLeft }) => {
   const meshRef = useRef();
   const { camera } = useThree();
 
@@ -54,6 +54,10 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
   // Collision Effect State
   const collisionIntensity = useRef(0);
   const bodyMaterialRef = useRef();
+
+  // Fly State
+  const [isFlying, setIsFlying] = useState(false);
+  const flyTimeLeft = useRef(0);
 
   useFrame((state, delta) => {
     if (!meshRef.current) return;
@@ -236,6 +240,8 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
 
         if (gridX < 0 || gridX >= size || gridY < 0 || gridY >= size) return true; // Out of bounds
 
+        if (isFlying) return false; // Fly through walls!
+
         const cell = mazeData[gridY][gridX];
         const localX = (pos.x + offset) - (gridX * CELL_SIZE);
         const localY = (pos.z + offset) - (gridY * CELL_SIZE);
@@ -284,8 +290,60 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       });
     }
 
+    // Check Wing Collection
+    if (wingItem && onCollectWing) {
+      const floorSize = size * CELL_SIZE;
+      const offset = (floorSize / 2) - (CELL_SIZE / 2);
+      const itemX = wingItem.x * CELL_SIZE - offset;
+      const itemZ = wingItem.y * CELL_SIZE - offset;
+      const dist = new THREE.Vector2(position.x - itemX, position.z - itemZ).length();
+
+      if (dist < 0.8) {
+        onCollectWing();
+        setIsFlying(true);
+        flyTimeLeft.current = 5.0;
+      }
+    }
+
+    // Fly Logic
+    if (isFlying) {
+      flyTimeLeft.current -= delta;
+      if (setFlyTimeLeft) {
+        setFlyTimeLeft(Math.max(0, flyTimeLeft.current));
+      }
+
+      if (flyTimeLeft.current <= 0) {
+        setIsFlying(false);
+        if (setFlyTimeLeft) {
+          setFlyTimeLeft(0);
+        }
+        // Land safely (reset height)
+        meshRef.current.position.y = 0.5;
+
+        // Snap to nearest cell center to avoid getting stuck in a wall
+        const floorSize = size * CELL_SIZE;
+        const offset = (floorSize / 2) - (CELL_SIZE / 2);
+        const gridX = Math.round((position.x + offset) / CELL_SIZE);
+        const gridY = Math.round((position.z + offset) / CELL_SIZE);
+
+        // Ensure we are in bounds
+        const safeX = Math.max(0, Math.min(size - 1, gridX));
+        const safeY = Math.max(0, Math.min(size - 1, gridY));
+
+        const centerX = safeX * CELL_SIZE - offset;
+        const centerZ = safeY * CELL_SIZE - offset;
+
+        const newPos = new THREE.Vector3(centerX, 0.5, centerZ);
+        setPosition(newPos);
+        meshRef.current.position.copy(newPos);
+      } else {
+        // Hover effect
+        meshRef.current.position.y = 2.0 + Math.sin(state.clock.elapsedTime * 5) * 0.2;
+      }
+    }
+
     // Animation (Bobbing & Feet & Arms)
-    if (isMoving) {
+    if (isMoving && !isFlying) {
       const time = state.clock.elapsedTime * 15;
       meshRef.current.position.y = 0.5 + Math.sin(time) * 0.05;
 
@@ -298,6 +356,19 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
         leftArmRef.current.rotation.x = Math.sin(time + Math.PI) * 0.8;
         rightArmRef.current.rotation.x = Math.sin(time) * 0.8;
       }
+    } else if (isFlying) {
+      // Flying pose
+      if (leftFootRef.current && rightFootRef.current) {
+        leftFootRef.current.position.z = -0.2;
+        rightFootRef.current.position.z = -0.2;
+      }
+      if (leftArmRef.current && rightArmRef.current) {
+        leftArmRef.current.rotation.x = 0;
+        rightArmRef.current.rotation.x = 0;
+        // Spread arms?
+        leftArmRef.current.rotation.z = 0.5;
+        rightArmRef.current.rotation.z = -0.5;
+      }
     } else {
       meshRef.current.position.y = 0.5;
       if (leftFootRef.current && rightFootRef.current) {
@@ -307,6 +378,8 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       if (leftArmRef.current && rightArmRef.current) {
         leftArmRef.current.rotation.x = 0;
         rightArmRef.current.rotation.x = 0;
+        leftArmRef.current.rotation.z = 0;
+        rightArmRef.current.rotation.z = 0;
       }
     }
 
@@ -329,58 +402,67 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
 
       // Calculate offset relative to rotation
       let dist = baseDist;
-      const height = baseHeight;
+      let height = baseHeight;
+      let lookAtHeight = 0.8;
 
-      // Simple Raycast for Camera Clipping
-      const backwardDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), camRot).normalize();
+      // Adjust camera height when flying
+      if (isFlying) {
+        height = baseHeight + 1.5; // Raise camera higher when flying
+        lookAtHeight = 2.0; // Look at the flying player's center
+      }
 
-      // We check discrete steps
-      const checkStep = 0.1;
-      const maxDist = baseDist;
+      // Simple Raycast for Camera Clipping (skip when flying)
+      if (!isFlying) {
+        const backwardDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), camRot).normalize();
 
-      const floorSize = size * CELL_SIZE;
-      const offset = (floorSize / 2) - (CELL_SIZE / 2);
+        // We check discrete steps
+        const checkStep = 0.1;
+        const maxDist = baseDist;
 
-      // Helper to check if a point collides with a wall (reusing logic somewhat)
-      const isWall = (pos) => {
-        const gridX = Math.round((pos.x + offset) / CELL_SIZE);
-        const gridY = Math.round((pos.z + offset) / CELL_SIZE);
+        const floorSize = size * CELL_SIZE;
+        const offset = (floorSize / 2) - (CELL_SIZE / 2);
 
-        if (gridX < 0 || gridX >= size || gridY < 0 || gridY >= size) return false;
+        // Helper to check if a point collides with a wall (reusing logic somewhat)
+        const isWall = (pos) => {
+          const gridX = Math.round((pos.x + offset) / CELL_SIZE);
+          const gridY = Math.round((pos.z + offset) / CELL_SIZE);
 
-        const cell = mazeData[gridY][gridX];
-        const localX = (pos.x + offset) - (gridX * CELL_SIZE);
-        const localY = (pos.z + offset) - (gridY * CELL_SIZE);
-        const wallThick = 0.2;
+          if (gridX < 0 || gridX >= size || gridY < 0 || gridY >= size) return false;
 
-        if (cell.walls.top && localY < -CELL_SIZE / 2 + wallThick) return true;
-        if (cell.walls.bottom && localY > CELL_SIZE / 2 - wallThick) return true;
-        if (cell.walls.left && localX < -CELL_SIZE / 2 + wallThick) return true;
-        if (cell.walls.right && localX > CELL_SIZE / 2 - wallThick) return true;
+          const cell = mazeData[gridY][gridX];
+          const localX = (pos.x + offset) - (gridX * CELL_SIZE);
+          const localY = (pos.z + offset) - (gridY * CELL_SIZE);
+          const wallThick = 0.2;
 
-        return false;
-      };
+          if (cell.walls.top && localY < -CELL_SIZE / 2 + wallThick) return true;
+          if (cell.walls.bottom && localY > CELL_SIZE / 2 - wallThick) return true;
+          if (cell.walls.left && localX < -CELL_SIZE / 2 + wallThick) return true;
+          if (cell.walls.right && localX > CELL_SIZE / 2 - wallThick) return true;
 
-      // Raymarch backwards
-      for (let d = 0; d <= maxDist; d += checkStep) {
-        const checkPos = position.clone().add(backwardDir.clone().multiplyScalar(d));
-        checkPos.y = height;
+          return false;
+        };
 
-        // Check center
-        if (isWall(checkPos)) {
-          dist = Math.max(0.5, d - 0.5);
-          break;
-        }
+        // Raymarch backwards
+        for (let d = 0; d <= maxDist; d += checkStep) {
+          const checkPos = position.clone().add(backwardDir.clone().multiplyScalar(d));
+          checkPos.y = height;
 
-        // Check sides (prevent corner clipping)
-        const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), camRot).normalize();
-        const sideOffset = 0.3;
-        const leftPos = checkPos.clone().sub(rightDir.clone().multiplyScalar(sideOffset));
-        const rightPos = checkPos.clone().add(rightDir.clone().multiplyScalar(sideOffset));
+          // Check center
+          if (isWall(checkPos)) {
+            dist = Math.max(0.5, d - 0.5);
+            break;
+          }
 
-        if (isWall(leftPos) || isWall(rightPos)) {
-          dist = Math.max(0.5, d - 0.5);
-          break;
+          // Check sides (prevent corner clipping)
+          const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), camRot).normalize();
+          const sideOffset = 0.3;
+          const leftPos = checkPos.clone().sub(rightDir.clone().multiplyScalar(sideOffset));
+          const rightPos = checkPos.clone().add(rightDir.clone().multiplyScalar(sideOffset));
+
+          if (isWall(leftPos) || isWall(rightPos)) {
+            dist = Math.max(0.5, d - 0.5);
+            break;
+          }
         }
       }
 
@@ -389,8 +471,8 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
 
       const targetPos = position.clone().add(camOffset);
       camera.position.lerp(targetPos, 0.1);
-      // Look slightly higher to avoid looking at the floor, but not too high
-      camera.lookAt(position.clone().add(new THREE.Vector3(0, 0.8, 0)));
+      // Look at player's current height
+      camera.lookAt(position.clone().add(new THREE.Vector3(0, lookAtHeight, 0)));
 
       // Apply Camera Shake from Collision
       if (collisionIntensity.current > 0) {
@@ -497,6 +579,45 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
           <meshStandardMaterial color="hotpink" />
         </mesh>
       </group>
+
+      {/* Wings - Only visible when flying */}
+      {isFlying && (
+        <>
+          {/* Left Wing */}
+          <group position={[-0.25, 0.15, 0.15]} rotation={[0.2, 0.8, 0.5]}>
+            {/* Feathers */}
+            <mesh position={[0, 0, 0]}>
+              <sphereGeometry args={[0.15, 16, 8, 0, Math.PI]} />
+              <meshStandardMaterial color="white" side={2} />
+            </mesh>
+            <mesh position={[-0.1, -0.05, 0.05]}>
+              <sphereGeometry args={[0.12, 16, 8, 0, Math.PI]} />
+              <meshStandardMaterial color="white" side={2} />
+            </mesh>
+            <mesh position={[-0.15, -0.1, 0.1]}>
+              <sphereGeometry args={[0.1, 16, 8, 0, Math.PI]} />
+              <meshStandardMaterial color="white" side={2} />
+            </mesh>
+          </group>
+
+          {/* Right Wing */}
+          <group position={[0.25, 0.15, 0.15]} rotation={[0.2, -0.8, -0.5]}>
+            {/* Feathers */}
+            <mesh position={[0, 0, 0]}>
+              <sphereGeometry args={[0.15, 16, 8, 0, Math.PI]} />
+              <meshStandardMaterial color="white" side={2} />
+            </mesh>
+            <mesh position={[0.1, -0.05, 0.05]}>
+              <sphereGeometry args={[0.12, 16, 8, 0, Math.PI]} />
+              <meshStandardMaterial color="white" side={2} />
+            </mesh>
+            <mesh position={[0.15, -0.1, 0.1]}>
+              <sphereGeometry args={[0.1, 16, 8, 0, Math.PI]} />
+              <meshStandardMaterial color="white" side={2} />
+            </mesh>
+          </group>
+        </>
+      )}
     </group>
   );
 };
