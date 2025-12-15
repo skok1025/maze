@@ -10,6 +10,7 @@ function App() {
   const [activeHint, setActiveHint] = useState(null); // null, 'minimap', 'zoomout'
   const [hintTimeLeft, setHintTimeLeft] = useState(0);
   const [collisionEffect, setCollisionEffect] = useState(false);
+  const [controlType, setControlType] = useState('keyboard'); // 'keyboard' or 'joystick'
 
   useEffect(() => {
     let timer;
@@ -59,6 +60,32 @@ function App() {
             </label>
           </div>
 
+          <div style={{ marginTop: '20px' }}>
+            <div style={{ fontSize: '18px', marginBottom: '10px' }}>Control Type:</div>
+            <label style={{ fontSize: '16px', cursor: 'pointer', marginRight: '20px' }}>
+              <input
+                type="radio"
+                name="controlType"
+                value="keyboard"
+                checked={controlType === 'keyboard'}
+                onChange={(e) => setControlType(e.target.value)}
+                style={{ marginRight: '5px' }}
+              />
+              Keyboard (Arrow Keys)
+            </label>
+            <label style={{ fontSize: '16px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="controlType"
+                value="joystick"
+                checked={controlType === 'joystick'}
+                onChange={(e) => setControlType(e.target.value)}
+                style={{ marginRight: '5px' }}
+              />
+              Joystick (Mobile)
+            </label>
+          </div>
+
           <button
             style={{ marginTop: '20px', fontSize: '16px', padding: '10px 20px', backgroundColor: '#555' }}
             onClick={() => {
@@ -88,6 +115,7 @@ function App() {
             activeHint={activeHint}
             hintTimeLeft={hintTimeLeft}
             joystickRef={joystickRef}
+            controlType={controlType}
           />
         </>
       )}
