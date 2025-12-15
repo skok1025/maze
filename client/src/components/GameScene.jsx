@@ -7,7 +7,7 @@ import Minimap from './Minimap'; // We will create this next
 import { generateMaze } from '../utils/mazeGenerator';
 import { getTheme } from '../utils/themes';
 
-const GameScene = ({ stage, setGameState, hintActive, joystickRef }) => {
+const GameScene = ({ stage, setGameState, activeHint, joystickRef }) => {
     // Increase size with stage. Stage 1 = 5x5, Stage 10 = 14x14
     const size = 5 + (stage - 1);
     const mazeData = useMemo(() => generateMaze(size, size), [size]);
@@ -30,12 +30,13 @@ const GameScene = ({ stage, setGameState, hintActive, joystickRef }) => {
                         setGameState={setGameState}
                         onPositionChange={setPlayerPos}
                         joystickRef={joystickRef}
+                        activeHint={activeHint}
                     />
                     {/* OrbitControls for debug, but Player will control camera later */}
                     {/* <OrbitControls /> */}
                 </Suspense>
             </Canvas>
-            {hintActive && playerPos && (
+            {activeHint === 'minimap' && playerPos && (
                 <Minimap mazeData={mazeData} size={size} playerPos={playerPos} />
             )}
         </div>
