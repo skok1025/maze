@@ -151,9 +151,23 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef })
     }
 
     // Camera Follow (Locked behind)
+
+    // Adjust for Mobile (Portrait)
+    const { width, height: canvasHeight } = state.size;
+    const isPortrait = width < canvasHeight;
+
+    const baseDist = isPortrait ? 6 : 3;
+    const baseHeight = isPortrait ? 3 : 1.5;
+    const baseFov = isPortrait ? 80 : 50;
+
+    if (camera.fov !== baseFov) {
+      camera.fov = baseFov;
+      camera.updateProjectionMatrix();
+    }
+
     // Calculate offset relative to rotation
-    let dist = 3;
-    const height = 1.5;
+    let dist = baseDist;
+    const height = baseHeight;
 
     // Simple Raycast for Camera Clipping
     // Check backwards from player to see if we hit a wall
@@ -161,7 +175,7 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef })
 
     // We check discrete steps
     const checkStep = 0.5;
-    const maxDist = 3;
+    const maxDist = baseDist;
 
     const floorSize = size * CELL_SIZE;
     const offset = (floorSize / 2) - (CELL_SIZE / 2);
