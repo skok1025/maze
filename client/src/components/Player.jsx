@@ -7,7 +7,7 @@ const SPEED = 5;
 const ROTATION_SPEED = 3;
 const PLAYER_RADIUS = 0.3;
 
-const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, activeHint }) => {
+const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, activeHint, collisionEffect, hintItems, onCollectHint }) => {
   const meshRef = useRef();
   const { camera } = useThree();
 
@@ -45,10 +45,15 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
   // Intro State
   const [isIntro, setIsIntro] = useState(true);
   const introStartTime = useRef(null);
+  const smoothedCameraRotation = useRef(0);
 
   // Victory State
   const [isVictory, setIsVictory] = useState(false);
   const victoryStartTime = useRef(null);
+
+  // Collision Effect State
+  const collisionIntensity = useRef(0);
+  const bodyMaterialRef = useRef();
 
   useFrame((state, delta) => {
     if (!meshRef.current) return;
@@ -182,6 +187,20 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       if (rotChange !== 0) {
         setRotation(newRotation);
         meshRef.current.rotation.y = newRotation;
+
+        // Tilt body when turning
+        // rotChange > 0 (Left) -> Tilt Left (Z > 0)
+        // rotChange < 0 (Right) -> Tilt Right (Z < 0)
+        // Wait, standard banking: Turn Left -> Bank Left. 
+        // In Three.js, Z rotation: Positive is CCW (Left tilt?), Negative is CW (Right tilt?)
+        // Let's try: Turn Left (rotChange > 0) -> Z = -0.2
+        // Turn Right (rotChange < 0) -> Z = 0.2
+        const tiltAmount = 0.3;
+        const targetTilt = rotChange > 0 ? -tiltAmount : tiltAmount;
+        meshRef.current.rotation.z = THREE.MathUtils.lerp(meshRef.current.rotation.z, targetTilt, 0.1);
+      } else {
+        // Return to upright
+        meshRef.current.rotation.z = THREE.MathUtils.lerp(meshRef.current.rotation.z, 0, 0.1);
       }
 
       // Movement
@@ -241,7 +260,28 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
         if (gridX === size - 1 && gridY === size - 1) {
           setIsVictory(true);
         }
+      } else {
+        // Collision Hit!
+        if (collisionEffect) {
+          collisionIntensity.current = 1.0;
+        }
       }
+    }
+
+    // Check Item Collection
+    if (hintItems && onCollectHint) {
+      const floorSize = size * CELL_SIZE;
+      const offset = (floorSize / 2) - (CELL_SIZE / 2);
+
+      hintItems.forEach(item => {
+        const itemX = item.x * CELL_SIZE - offset;
+        const itemZ = item.y * CELL_SIZE - offset;
+        const dist = new THREE.Vector2(position.x - itemX, position.z - itemZ).length();
+
+        if (dist < 0.8) { // Collection radius
+          onCollectHint(item.id);
+        }
+      });
     }
 
     // Animation (Bobbing & Feet & Arms)
@@ -274,7 +314,6 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
     if (activeHint === 'zoomout') {
       // Bird's Eye View Hint
       const centerPos = new THREE.Vector3(0, 0, 0);
-      // Position high above the maze center, looking down to see the whole maze
       const highPos = new THREE.Vector3(0, size * 5, 0.1);
 
       camera.position.lerp(highPos, 0.1);
@@ -282,13 +321,18 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
     } else {
       // Normal Follow Logic
 
+      // Smooth Camera Rotation
+      const rotLerpFactor = 3.0 * delta;
+      smoothedCameraRotation.current += (newRotation - smoothedCameraRotation.current) * rotLerpFactor;
+
+      const camRot = smoothedCameraRotation.current;
+
       // Calculate offset relative to rotation
       let dist = baseDist;
       const height = baseHeight;
 
       // Simple Raycast for Camera Clipping
-      // Check backwards from player to see if we hit a wall
-      const backwardDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation).normalize();
+      const backwardDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), camRot).normalize();
 
       // We check discrete steps
       const checkStep = 0.1;
@@ -329,7 +373,7 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
         }
 
         // Check sides (prevent corner clipping)
-        const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation).normalize();
+        const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), camRot).normalize();
         const sideOffset = 0.3;
         const leftPos = checkPos.clone().sub(rightDir.clone().multiplyScalar(sideOffset));
         const rightPos = checkPos.clone().add(rightDir.clone().multiplyScalar(sideOffset));
@@ -341,11 +385,33 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       }
 
       const camOffset = new THREE.Vector3(0, height, dist);
-      camOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation);
+      camOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), camRot);
 
       const targetPos = position.clone().add(camOffset);
-      camera.position.lerp(targetPos, 0.2);
-      camera.lookAt(position.clone().add(new THREE.Vector3(0, 0.5, 0)));
+      camera.position.lerp(targetPos, 0.1);
+      // Look slightly higher to avoid looking at the floor, but not too high
+      camera.lookAt(position.clone().add(new THREE.Vector3(0, 0.8, 0)));
+
+      // Apply Camera Shake from Collision
+      if (collisionIntensity.current > 0) {
+        const shakeAmount = 0.2 * collisionIntensity.current;
+        const shakeX = (Math.random() - 0.5) * shakeAmount;
+        const shakeY = (Math.random() - 0.5) * shakeAmount;
+        camera.position.x += shakeX;
+        camera.position.y += shakeY;
+      }
+    }
+
+    // Process Collision Effect Decay & Color
+    if (collisionIntensity.current > 0) {
+      collisionIntensity.current -= delta * 3.0; // Fade out
+      if (collisionIntensity.current < 0) collisionIntensity.current = 0;
+
+      if (bodyMaterialRef.current) {
+        const baseColor = new THREE.Color("hotpink");
+        const hitColor = new THREE.Color("red");
+        bodyMaterialRef.current.color.lerpColors(baseColor, hitColor, collisionIntensity.current);
+      }
     }
   });
 
@@ -367,6 +433,11 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
     // Reset Victory
     setIsVictory(false);
     victoryStartTime.current = null;
+    smoothedCameraRotation.current = 0;
+
+    // Reset Collision
+    collisionIntensity.current = 0;
+    if (bodyMaterialRef.current) bodyMaterialRef.current.color.set("hotpink");
 
     if (meshRef.current) {
       meshRef.current.position.copy(startPos);
@@ -384,7 +455,7 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       {/* Body */}
       <mesh castShadow position={[0, 0, 0]}>
         <sphereGeometry args={[PLAYER_RADIUS, 32, 32]} />
-        <meshStandardMaterial color="hotpink" />
+        <meshStandardMaterial ref={bodyMaterialRef} color="hotpink" />
       </mesh>
       {/* Eyes */}
       <mesh position={[-0.1, 0.1, -0.25]}>

@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
+import { Text } from '@react-three/drei';
 
 const WALL_HEIGHT = 2;
 const CELL_SIZE = 2;
 
-const Maze = ({ mazeData, size, theme }) => {
+const Maze = ({ mazeData, size, theme, hintItems }) => {
     const walls = useMemo(() => {
         const wallGeometries = [];
         const wallMaterial = new THREE.MeshStandardMaterial({ color: theme.wall });
@@ -56,7 +57,42 @@ const Maze = ({ mazeData, size, theme }) => {
             });
         });
         return wallGeometries;
-    }, [mazeData]);
+    }, [mazeData, theme]);
+
+    // Solve Maze to find path
+    const solutionPath = useMemo(() => {
+        const queue = [{ x: 0, y: 0, path: [] }];
+        const visited = new Set(['0,0']);
+
+        while (queue.length > 0) {
+            const { x, y, path } = queue.shift();
+            const newPath = [...path, { x, y }];
+
+            if (x === size - 1 && y === size - 1) {
+                return newPath;
+            }
+
+            const cell = mazeData[y][x];
+
+            // Directions: Top, Bottom, Left, Right
+            const neighbors = [
+                { nx: x, ny: y - 1, wall: 'top' },
+                { nx: x, ny: y + 1, wall: 'bottom' },
+                { nx: x - 1, ny: y, wall: 'left' },
+                { nx: x + 1, ny: y, wall: 'right' }
+            ];
+
+            for (const { nx, ny, wall } of neighbors) {
+                if (nx >= 0 && nx < size && ny >= 0 && ny < size && !visited.has(`${nx},${ny}`)) {
+                    if (!cell.walls[wall]) {
+                        visited.add(`${nx},${ny}`);
+                        queue.push({ x: nx, y: ny, path: newPath });
+                    }
+                }
+            }
+        }
+        return [];
+    }, [mazeData, size]);
 
     const floorSize = size * CELL_SIZE;
     const offset = (floorSize / 2) - (CELL_SIZE / 2);
@@ -68,6 +104,55 @@ const Maze = ({ mazeData, size, theme }) => {
                 <meshStandardMaterial color={theme.floor} />
             </mesh>
             {walls}
+
+            {/* Path Markers (Breadcrumbs) - Hot/Cold Indicator */}
+            {solutionPath.map((pos, index) => {
+                // Skip start and very end (exit is already marked)
+                if (index === 0 || index >= solutionPath.length - 1) return null;
+
+                // Show marker every 3 steps for intermediate guidance
+                if (index % 3 !== 0) return null;
+
+                const progress = index / solutionPath.length;
+                const color = new THREE.Color();
+                // Cyan (Cold/Start) -> Red (Hot/Exit)
+                color.lerpColors(new THREE.Color('#00ffff'), new THREE.Color('#ff0000'), progress);
+
+                return (
+                    <mesh
+                        key={`marker-${index}`}
+                        position={[pos.x * CELL_SIZE, 0.02, pos.y * CELL_SIZE]}
+                        receiveShadow
+                    >
+                        <cylinderGeometry args={[0.2, 0.2, 0.05, 16]} />
+                        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
+                    </mesh>
+                );
+            })}
+
+            {/* Hint Items */}
+            {hintItems && hintItems.map((item) => (
+                <mesh
+                    key={`hint-${item.id}`}
+                    position={[item.x * CELL_SIZE, 0.5, item.y * CELL_SIZE]}
+                    castShadow
+                >
+                    <sphereGeometry args={[0.3, 16, 16]} />
+                    <meshStandardMaterial color="gold" emissive="gold" emissiveIntensity={0.5} />
+                    <Text
+                        position={[0, 0.8, 0]}
+                        fontSize={0.5}
+                        color="white"
+                        anchorX="center"
+                        anchorY="middle"
+                        billboard // Make text always face the camera
+                    >
+                        Hint +1
+                    </Text>
+                    {/* Simple bobbing animation could be added here if we made this a separate component */}
+                </mesh>
+            ))}
+
             {/* Exit Marker */}
             <mesh position={[(size - 1) * CELL_SIZE, 1, (size - 1) * CELL_SIZE]}>
                 <cylinderGeometry args={[0.5, 0.5, 2, 32]} />

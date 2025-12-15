@@ -6,9 +6,10 @@ import './index.css';
 function App() {
   const [gameState, setGameState] = useState('start'); // start, playing, won, gameover
   const [stage, setStage] = useState(() => parseInt(localStorage.getItem('maze_stage') || 1));
-  const [hints, setHints] = useState(5);
+  const [hints, setHints] = useState(2);
   const [activeHint, setActiveHint] = useState(null); // null, 'minimap', 'zoomout'
   const [hintTimeLeft, setHintTimeLeft] = useState(0);
+  const [collisionEffect, setCollisionEffect] = useState(false);
 
   useEffect(() => {
     let timer;
@@ -45,6 +46,19 @@ function App() {
         <div className="start-screen">
           <h1>3D Maze Game</h1>
           <button onClick={() => setGameState('playing')}>Start Game</button>
+
+          <div style={{ marginTop: '20px' }}>
+            <label style={{ fontSize: '18px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={collisionEffect}
+                onChange={(e) => setCollisionEffect(e.target.checked)}
+                style={{ width: '20px', height: '20px', marginRight: '10px' }}
+              />
+              Enable Collision Effect (Shake & Red Flash)
+            </label>
+          </div>
+
           <button
             style={{ marginTop: '20px', fontSize: '16px', padding: '10px 20px', backgroundColor: '#555' }}
             onClick={() => {
@@ -59,7 +73,14 @@ function App() {
       )}
       {gameState === 'playing' && (
         <>
-          <GameScene stage={stage} setGameState={setGameState} activeHint={activeHint} joystickRef={joystickRef} />
+          <GameScene
+            stage={stage}
+            setGameState={setGameState}
+            activeHint={activeHint}
+            joystickRef={joystickRef}
+            collisionEffect={collisionEffect}
+            setHints={setHints}
+          />
           <UI
             stage={stage}
             hints={hints}
@@ -79,7 +100,7 @@ function App() {
               localStorage.setItem('maze_stage', next);
               return next;
             });
-            setHints(5);
+            setHints(2);
             setGameState('playing');
             setHintActive(false);
           }}>Next Stage</button>
