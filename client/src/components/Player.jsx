@@ -7,7 +7,7 @@ const SPEED = 5;
 const ROTATION_SPEED = 3;
 const PLAYER_RADIUS = 0.3;
 
-const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef }) => {
+const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, activeHint }) => {
   const meshRef = useRef();
   const { camera } = useThree();
 
@@ -42,46 +42,166 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef })
     };
   }, []);
 
+  // Intro State
+  const [isIntro, setIsIntro] = useState(true);
+  const introStartTime = useRef(null);
+
+  // Victory State
+  const [isVictory, setIsVictory] = useState(false);
+  const victoryStartTime = useRef(null);
+
   useFrame((state, delta) => {
     if (!meshRef.current) return;
 
-    // Rotation
-    let rotChange = 0;
-    if (keys.current.a) rotChange += ROTATION_SPEED * delta;
-    if (keys.current.d) rotChange -= ROTATION_SPEED * delta;
+    // Adjust for Mobile (Portrait)
+    const { width, height: canvasHeight } = state.size;
+    const isPortrait = width < canvasHeight;
 
-    // Joystick Rotation (X axis)
-    if (joystickRef && joystickRef.current) {
-      // Joystick X is usually -1 (left) to 1 (right)
-      // We want left (-1) to ADD rotation (positive rotChange)
-      rotChange -= joystickRef.current.x * ROTATION_SPEED * delta;
+    const baseDist = isPortrait ? 6 : 4;
+    const baseHeight = isPortrait ? 3 : 1.5;
+    const baseFov = isPortrait ? 80 : 50;
+
+    if (camera.fov !== baseFov) {
+      camera.fov = baseFov;
+      camera.updateProjectionMatrix();
     }
 
-    const newRotation = rotation + rotChange;
-    if (rotChange !== 0) {
-      setRotation(newRotation);
-      meshRef.current.rotation.y = newRotation;
-    }
+    // Intro Animation Logic
+    if (isIntro) {
+      if (introStartTime.current === null) {
+        introStartTime.current = state.clock.elapsedTime;
+      }
 
-    // Movement
-    const moveSpeed = SPEED * delta;
-    const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation);
-    let moveVec = new THREE.Vector3();
+      const elapsed = state.clock.elapsedTime - introStartTime.current;
+      const totalDuration = 5.0;
 
-    if (keys.current.w) moveVec.add(forward);
-    if (keys.current.s) moveVec.sub(forward);
+      if (elapsed < totalDuration) {
+        const t = elapsed / totalDuration;
+        // Ease in-out cubic for smooth acceleration and deceleration
+        const smoothT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-    // Joystick Movement (Y axis)
-    if (joystickRef && joystickRef.current) {
-      // Joystick Y is usually -1 (bottom) to 1 (top)
-      // We want top (1) to move forward
-      const joyY = joystickRef.current.y;
-      if (Math.abs(joyY) > 0.1) { // Deadzone
-        moveVec.add(forward.clone().multiplyScalar(joyY));
+        // --- Animation Parameters ---
+
+        // 1. Orbit Center: From Maze Center (0,0,0) to Player Position
+        // This makes the camera focus shift from the maze to the player naturally.
+        const startCenter = new THREE.Vector3(0, 0, 0);
+        const endCenter = position.clone();
+        const currCenter = new THREE.Vector3().lerpVectors(startCenter, endCenter, smoothT);
+
+        // 2. Radius (Distance from Center): From Far to Close (baseDist)
+        const startRadius = size * 3.0; // See entire maze
+        const endRadius = baseDist;
+        const currRadius = startRadius + (endRadius - startRadius) * smoothT;
+
+        // 3. Height: From High to Low (baseHeight)
+        const startHeight = size * 3.0;
+        const endHeight = baseHeight;
+        const currHeight = startHeight + (endHeight - startHeight) * smoothT;
+
+        // 4. Angle: Spiral Motion
+        // Start from Front-ish (Math.PI) to Back (0) relative to player rotation
+        // Adding extra rotation (Math.PI * 2) makes it swirl more dynamically
+        const startAngle = rotation + Math.PI; // Front view
+        const endAngle = rotation + Math.PI * 4; // Spin 2 times and land on Back (0 mod 2PI) -> Wait, Back is 0 relative to rotation.
+        // Let's just go from PI to 0.
+        const angleStartVal = rotation + Math.PI;
+        const angleEndVal = rotation;
+        const currAngle = angleStartVal + (angleEndVal - angleStartVal) * smoothT;
+
+        // 5. Calculate Camera Position
+        // X = CenterX + sin(angle) * radius
+        // Z = CenterZ + cos(angle) * radius
+        const camX = currCenter.x + Math.sin(currAngle) * currRadius;
+        const camZ = currCenter.z + Math.cos(currAngle) * currRadius;
+        const camY = currCenter.y + currHeight;
+
+        camera.position.set(camX, camY, camZ);
+
+        // 6. Look At Target: From Maze Center to Player Head
+        const startLook = new THREE.Vector3(0, 0, 0);
+        const endLook = position.clone().add(new THREE.Vector3(0, 0.5, 0));
+        const currLook = new THREE.Vector3().lerpVectors(startLook, endLook, smoothT);
+
+        camera.lookAt(currLook);
+
+        // Breathing animation
+        const time = state.clock.elapsedTime * 2;
+        meshRef.current.position.y = 0.5 + Math.sin(time) * 0.02;
+
+        return;
+      } else {
+        setIsIntro(false);
       }
     }
 
-    const isMoving = moveVec.lengthSq() > 0;
+    // Victory Animation Logic
+    if (isVictory) {
+      if (victoryStartTime.current === null) {
+        victoryStartTime.current = state.clock.elapsedTime;
+      }
+      const elapsed = state.clock.elapsedTime - victoryStartTime.current;
+
+      if (elapsed < 2.0) {
+        // Dance! Jump and Spin
+        const jumpHeight = Math.abs(Math.sin(elapsed * 10)) * 0.5;
+        meshRef.current.position.y = 0.5 + jumpHeight;
+        meshRef.current.rotation.y += 10 * delta; // Spin fast
+
+        // Arms up
+        if (leftArmRef.current && rightArmRef.current) {
+          leftArmRef.current.rotation.z = Math.PI - 0.5; // Hands up
+          rightArmRef.current.rotation.z = -Math.PI + 0.5;
+        }
+        return;
+      } else {
+        setGameState('won');
+        return;
+      }
+    }
+
+    // Rotation & Movement (Only if not zooming out)
+    let rotChange = 0;
+    let moveVec = new THREE.Vector3();
+    let isMoving = false;
+    let newRotation = rotation;
+    const moveSpeed = SPEED * delta;
+
+    if (activeHint !== 'zoomout') {
+      // Rotation
+      if (keys.current.a) rotChange += ROTATION_SPEED * delta;
+      if (keys.current.d) rotChange -= ROTATION_SPEED * delta;
+
+      // Joystick Rotation (X axis)
+      if (joystickRef && joystickRef.current) {
+        // Joystick X is usually -1 (left) to 1 (right)
+        // We want left (-1) to ADD rotation (positive rotChange)
+        rotChange -= joystickRef.current.x * ROTATION_SPEED * delta;
+      }
+
+      newRotation = rotation + rotChange;
+      if (rotChange !== 0) {
+        setRotation(newRotation);
+        meshRef.current.rotation.y = newRotation;
+      }
+
+      // Movement
+      const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation);
+
+      if (keys.current.w) moveVec.add(forward);
+      if (keys.current.s) moveVec.sub(forward);
+
+      // Joystick Movement (Y axis)
+      if (joystickRef && joystickRef.current) {
+        // Joystick Y is usually -1 (bottom) to 1 (top)
+        // We want top (1) to move forward
+        const joyY = joystickRef.current.y;
+        if (Math.abs(joyY) > 0.1) { // Deadzone
+          moveVec.add(forward.clone().multiplyScalar(joyY));
+        }
+      }
+
+      isMoving = moveVec.lengthSq() > 0;
+    }
 
     if (isMoving) {
       moveVec.normalize().multiplyScalar(moveSpeed);
@@ -119,7 +239,7 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef })
         const gridX = Math.round((nextPos.x + offset) / CELL_SIZE);
         const gridY = Math.round((nextPos.z + offset) / CELL_SIZE);
         if (gridX === size - 1 && gridY === size - 1) {
-          setGameState('won');
+          setIsVictory(true);
         }
       }
     }
@@ -151,84 +271,82 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef })
     }
 
     // Camera Follow (Locked behind)
+    if (activeHint === 'zoomout') {
+      // Bird's Eye View Hint
+      const centerPos = new THREE.Vector3(0, 0, 0);
+      // Position high above the maze center, looking down to see the whole maze
+      const highPos = new THREE.Vector3(0, size * 5, 0.1);
 
-    // Adjust for Mobile (Portrait)
-    const { width, height: canvasHeight } = state.size;
-    const isPortrait = width < canvasHeight;
+      camera.position.lerp(highPos, 0.1);
+      camera.lookAt(centerPos);
+    } else {
+      // Normal Follow Logic
 
-    const baseDist = isPortrait ? 6 : 3;
-    const baseHeight = isPortrait ? 3 : 1.5;
-    const baseFov = isPortrait ? 80 : 50;
+      // Calculate offset relative to rotation
+      let dist = baseDist;
+      const height = baseHeight;
 
-    if (camera.fov !== baseFov) {
-      camera.fov = baseFov;
-      camera.updateProjectionMatrix();
-    }
+      // Simple Raycast for Camera Clipping
+      // Check backwards from player to see if we hit a wall
+      const backwardDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation).normalize();
 
-    // Calculate offset relative to rotation
-    let dist = baseDist;
-    const height = baseHeight;
+      // We check discrete steps
+      const checkStep = 0.1;
+      const maxDist = baseDist;
 
-    // Simple Raycast for Camera Clipping
-    // Check backwards from player to see if we hit a wall
-    const backwardDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation).normalize();
+      const floorSize = size * CELL_SIZE;
+      const offset = (floorSize / 2) - (CELL_SIZE / 2);
 
-    // We check discrete steps
-    const checkStep = 0.5;
-    const maxDist = baseDist;
+      // Helper to check if a point collides with a wall (reusing logic somewhat)
+      const isWall = (pos) => {
+        const gridX = Math.round((pos.x + offset) / CELL_SIZE);
+        const gridY = Math.round((pos.z + offset) / CELL_SIZE);
 
-    const floorSize = size * CELL_SIZE;
-    const offset = (floorSize / 2) - (CELL_SIZE / 2);
+        if (gridX < 0 || gridX >= size || gridY < 0 || gridY >= size) return false;
 
-    // Helper to check if a point collides with a wall (reusing logic somewhat)
-    const isWall = (pos) => {
-      const gridX = Math.round((pos.x + offset) / CELL_SIZE);
-      const gridY = Math.round((pos.z + offset) / CELL_SIZE);
+        const cell = mazeData[gridY][gridX];
+        const localX = (pos.x + offset) - (gridX * CELL_SIZE);
+        const localY = (pos.z + offset) - (gridY * CELL_SIZE);
+        const wallThick = 0.2;
 
-      if (gridX < 0 || gridX >= size || gridY < 0 || gridY >= size) return false;
+        if (cell.walls.top && localY < -CELL_SIZE / 2 + wallThick) return true;
+        if (cell.walls.bottom && localY > CELL_SIZE / 2 - wallThick) return true;
+        if (cell.walls.left && localX < -CELL_SIZE / 2 + wallThick) return true;
+        if (cell.walls.right && localX > CELL_SIZE / 2 - wallThick) return true;
 
-      const cell = mazeData[gridY][gridX];
-      const localX = (pos.x + offset) - (gridX * CELL_SIZE);
-      const localY = (pos.z + offset) - (gridY * CELL_SIZE);
-      const wallThick = 0.2;
+        return false;
+      };
 
-      if (cell.walls.top && localY < -CELL_SIZE / 2 + wallThick) return true;
-      if (cell.walls.bottom && localY > CELL_SIZE / 2 - wallThick) return true;
-      if (cell.walls.left && localX < -CELL_SIZE / 2 + wallThick) return true;
-      if (cell.walls.right && localX > CELL_SIZE / 2 - wallThick) return true;
+      // Raymarch backwards
+      for (let d = 0; d <= maxDist; d += checkStep) {
+        const checkPos = position.clone().add(backwardDir.clone().multiplyScalar(d));
+        checkPos.y = height;
 
-      return false;
-    };
+        // Check center
+        if (isWall(checkPos)) {
+          dist = Math.max(0.5, d - 0.5);
+          break;
+        }
 
-    // Raymarch backwards
-    for (let d = 0; d <= maxDist; d += checkStep) {
-      const checkPos = position.clone().add(backwardDir.clone().multiplyScalar(d));
-      checkPos.y = height;
+        // Check sides (prevent corner clipping)
+        const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation).normalize();
+        const sideOffset = 0.3;
+        const leftPos = checkPos.clone().sub(rightDir.clone().multiplyScalar(sideOffset));
+        const rightPos = checkPos.clone().add(rightDir.clone().multiplyScalar(sideOffset));
 
-      // Check center
-      if (isWall(checkPos)) {
-        dist = Math.max(0.5, d - 0.5);
-        break;
+        if (isWall(leftPos) || isWall(rightPos)) {
+          dist = Math.max(0.5, d - 0.5);
+          break;
+        }
       }
 
-      // Check sides (prevent corner clipping)
-      const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation).normalize();
-      const sideOffset = 0.3;
-      const leftPos = checkPos.clone().sub(rightDir.clone().multiplyScalar(sideOffset));
-      const rightPos = checkPos.clone().add(rightDir.clone().multiplyScalar(sideOffset));
+      const camOffset = new THREE.Vector3(0, height, dist);
+      camOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation);
 
-      if (isWall(leftPos) || isWall(rightPos)) {
-        dist = Math.max(0.5, d - 0.5);
-        break;
-      }
+      const targetPos = position.clone().add(camOffset);
+      camera.position.lerp(targetPos, 0.2);
+      camera.lookAt(position.clone().add(new THREE.Vector3(0, 0.5, 0)));
     }
-
-    const camOffset = new THREE.Vector3(0, height, dist);
-    camOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), newRotation);
-
-    const targetPos = position.clone().add(camOffset);
-    camera.position.lerp(targetPos, 0.2);
-    camera.lookAt(position.clone().add(new THREE.Vector3(0, 0.5, 0)));
   });
 
   // Initial position setup
@@ -241,6 +359,15 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef })
     const startPos = new THREE.Vector3(startX, 0.5, startZ);
     setPosition(startPos);
     setRotation(0);
+
+    // Reset Intro
+    setIsIntro(true);
+    introStartTime.current = null;
+
+    // Reset Victory
+    setIsVictory(false);
+    victoryStartTime.current = null;
+
     if (meshRef.current) {
       meshRef.current.position.copy(startPos);
       meshRef.current.rotation.y = 0;
