@@ -180,11 +180,17 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       if (keys.current.a) rotChange += ROTATION_SPEED * delta;
       if (keys.current.d) rotChange -= ROTATION_SPEED * delta;
 
-      // Joystick Rotation (X axis)
+      // Joystick Rotation (X axis) with deadzone and reduced sensitivity
       if (joystickRef && joystickRef.current) {
-        // Joystick X is usually -1 (left) to 1 (right)
-        // We want left (-1) to ADD rotation (positive rotChange)
-        rotChange -= joystickRef.current.x * ROTATION_SPEED * delta;
+        const joyX = joystickRef.current.x;
+        const deadzone = 0.2; // Ignore small movements
+        const sensitivity = 0.5; // Reduce rotation speed to 50%
+
+        if (Math.abs(joyX) > deadzone) {
+          // Apply deadzone and sensitivity
+          const adjustedX = (Math.abs(joyX) - deadzone) / (1 - deadzone) * Math.sign(joyX);
+          rotChange -= adjustedX * ROTATION_SPEED * delta * sensitivity;
+        }
       }
 
       newRotation = rotation + rotChange;
@@ -213,8 +219,6 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
 
       // Joystick Movement (Y axis)
       if (joystickRef && joystickRef.current) {
-        // Joystick Y is usually -1 (bottom) to 1 (top)
-        // We want top (1) to move forward
         const joyY = joystickRef.current.y;
         if (Math.abs(joyY) > 0.1) { // Deadzone
           moveVec.add(forward.clone().multiplyScalar(joyY));
