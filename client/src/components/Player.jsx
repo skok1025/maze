@@ -192,19 +192,17 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
         setRotation(newRotation);
         meshRef.current.rotation.y = newRotation;
 
-        // Tilt body when turning
-        // rotChange > 0 (Left) -> Tilt Left (Z > 0)
-        // rotChange < 0 (Right) -> Tilt Right (Z < 0)
-        // Wait, standard banking: Turn Left -> Bank Left. 
-        // In Three.js, Z rotation: Positive is CCW (Left tilt?), Negative is CW (Right tilt?)
-        // Let's try: Turn Left (rotChange > 0) -> Z = -0.2
-        // Turn Right (rotChange < 0) -> Z = 0.2
-        const tiltAmount = 0.3;
-        const targetTilt = rotChange > 0 ? -tiltAmount : tiltAmount;
-        meshRef.current.rotation.z = THREE.MathUtils.lerp(meshRef.current.rotation.z, targetTilt, 0.1);
+        // Tilt body when turning (only on desktop)
+        if (!isPortrait) {
+          const tiltAmount = 0.3;
+          const targetTilt = rotChange > 0 ? -tiltAmount : tiltAmount;
+          meshRef.current.rotation.z = THREE.MathUtils.lerp(meshRef.current.rotation.z, targetTilt, 0.1);
+        }
       } else {
-        // Return to upright
-        meshRef.current.rotation.z = THREE.MathUtils.lerp(meshRef.current.rotation.z, 0, 0.1);
+        // Return to upright (only on desktop)
+        if (!isPortrait) {
+          meshRef.current.rotation.z = THREE.MathUtils.lerp(meshRef.current.rotation.z, 0, 0.1);
+        }
       }
 
       // Movement
