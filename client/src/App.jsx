@@ -5,30 +5,30 @@ import './index.css';
 
 function App() {
   const [gameState, setGameState] = useState('start'); // start, playing, won, gameover
-  const [stage, setStage] = useState(1);
+  const [stage, setStage] = useState(() => parseInt(localStorage.getItem('maze_stage') || 1));
   const [hints, setHints] = useState(5);
-  const [hintActive, setHintActive] = useState(false);
+  const [activeHint, setActiveHint] = useState(null); // null, 'minimap', 'zoomout'
   const [hintTimeLeft, setHintTimeLeft] = useState(0);
 
   useEffect(() => {
     let timer;
-    if (hintActive && hintTimeLeft > 0) {
+    if (activeHint && hintTimeLeft > 0) {
       timer = setInterval(() => {
         setHintTimeLeft((prev) => prev - 1);
       }, 1000);
     } else if (hintTimeLeft === 0) {
-      setHintActive(false);
+      setActiveHint(null);
     }
     return () => clearInterval(timer);
-  }, [hintActive, hintTimeLeft]);
+  }, [activeHint, hintTimeLeft]);
 
-  const activateHint = () => {
-    if (hints > 0 && !hintActive) {
+  const activateHint = (type) => {
+    if (hints > 0 && !activeHint) {
       setHints(h => h - 1);
-      setHintActive(true);
+      setActiveHint(type);
       setHintTimeLeft(10);
-    } else if (hintActive) {
-      setHintActive(false);
+    } else if (activeHint === type) {
+      setActiveHint(null);
       setHintTimeLeft(0);
     }
   };
@@ -45,16 +45,26 @@ function App() {
         <div className="start-screen">
           <h1>3D Maze Game</h1>
           <button onClick={() => setGameState('playing')}>Start Game</button>
+          <button
+            style={{ marginTop: '20px', fontSize: '16px', padding: '10px 20px', backgroundColor: '#555' }}
+            onClick={() => {
+              setStage(1);
+              localStorage.setItem('maze_stage', 1);
+              setGameState('playing');
+            }}
+          >
+            Reset Progress (Start from Stage 1)
+          </button>
         </div>
       )}
       {gameState === 'playing' && (
         <>
-          <GameScene stage={stage} setGameState={setGameState} hintActive={hintActive} joystickRef={joystickRef} />
+          <GameScene stage={stage} setGameState={setGameState} activeHint={activeHint} joystickRef={joystickRef} />
           <UI
             stage={stage}
             hints={hints}
             activateHint={activateHint}
-            hintActive={hintActive}
+            activeHint={activeHint}
             hintTimeLeft={hintTimeLeft}
             joystickRef={joystickRef}
           />
@@ -64,7 +74,12 @@ function App() {
         <div className="win-screen">
           <h1>Stage {stage} Cleared!</h1>
           <button onClick={() => {
-            setStage(s => s + 1);
+            setStage(s => {
+              const next = s + 1;
+              localStorage.setItem('maze_stage', next);
+              return next;
+            });
+            setHints(5);
             setGameState('playing');
             setHintActive(false);
           }}>Next Stage</button>
