@@ -12,7 +12,7 @@ const Minimap = ({ mazeData, size, playerPos }) => {
     return (
         <div className="minimap" style={{
             position: 'absolute',
-            bottom: '20px',
+            top: '70px',
             right: '20px',
             width: '200px',
             height: '200px',
