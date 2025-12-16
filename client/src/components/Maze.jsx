@@ -5,7 +5,7 @@ import { Text } from '@react-three/drei';
 const WALL_HEIGHT = 2;
 const CELL_SIZE = 2;
 
-const Maze = ({ mazeData, size, theme, hintItems, wingItem }) => {
+const Maze = ({ mazeData, size, theme, hintItems, wingItem, healthItems }) => {
     const walls = useMemo(() => {
         const wallGeometries = [];
         const wallMaterial = new THREE.MeshStandardMaterial({ color: theme.wall });
@@ -175,12 +175,58 @@ const Maze = ({ mazeData, size, theme, hintItems, wingItem }) => {
                 </mesh>
             )}
 
-            {/* Exit Marker */}
-            <mesh position={[(size - 1) * CELL_SIZE, 1, (size - 1) * CELL_SIZE]}>
-                <cylinderGeometry args={[0.5, 0.5, 2, 32]} />
-                <meshStandardMaterial color="#00ff00" emissive="#00ff00" emissiveIntensity={2} transparent opacity={0.8} />
-            </mesh>
-            <pointLight position={[(size - 1) * CELL_SIZE, 2, (size - 1) * CELL_SIZE]} color="#00ff00" intensity={2} distance={5} />
+            {/* Health Items */}
+            {healthItems && healthItems.map((item) => (
+                <mesh
+                    key={`health-${item.id}`}
+                    position={[item.x * CELL_SIZE, 0.5, item.y * CELL_SIZE]}
+                    castShadow
+                >
+                    <sphereGeometry args={[0.3, 16, 16]} />
+                    <meshStandardMaterial color="red" emissive="red" emissiveIntensity={0.5} />
+                    <Text
+                        position={[0, 0.8, 0]}
+                        fontSize={0.5}
+                        color="white"
+                        anchorX="center"
+                        anchorY="middle"
+                        billboard
+                    >
+                        HP +20
+                    </Text>
+                </mesh>
+            ))}
+
+            {/* Exit Marker - Light Beam */}
+            <group position={[(size - 1) * CELL_SIZE, 0, (size - 1) * CELL_SIZE]}>
+                {/* Main Beam */}
+                <mesh position={[0, 50, 0]}>
+                    <cylinderGeometry args={[0.5, 0.5, 100, 32, 1, true]} />
+                    <meshStandardMaterial
+                        color="#00ff00"
+                        emissive="#00ff00"
+                        emissiveIntensity={2}
+                        transparent
+                        opacity={0.3}
+                        side={THREE.DoubleSide}
+                        depthWrite={false} // Prevent z-fighting with sky
+                    />
+                </mesh>
+                {/* Core Beam */}
+                <mesh position={[0, 50, 0]}>
+                    <cylinderGeometry args={[0.1, 0.1, 100, 16, 1, true]} />
+                    <meshStandardMaterial
+                        color="white"
+                        emissive="white"
+                        emissiveIntensity={5}
+                        transparent
+                        opacity={0.8}
+                        depthWrite={false}
+                    />
+                </mesh>
+                {/* Base Glow */}
+                <pointLight position={[0, 2, 0]} color="#00ff00" intensity={5} distance={10} decay={2} />
+            </group>
         </group>
     );
 };

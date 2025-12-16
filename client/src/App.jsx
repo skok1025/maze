@@ -10,7 +10,11 @@ function App() {
   const [activeHint, setActiveHint] = useState(null); // null, 'minimap', 'zoomout'
   const [hintTimeLeft, setHintTimeLeft] = useState(0);
   const [collisionEffect, setCollisionEffect] = useState(false);
-  const [controlType, setControlType] = useState('keyboard'); // 'keyboard' or 'joystick'
+
+  // Gameplay State
+  const [health, setHealth] = useState(100);
+  const [sprint, setSprint] = useState(false);
+  const healthTimer = React.useRef(null);
 
   useEffect(() => {
     let timer;
@@ -39,6 +43,52 @@ function App() {
     console.log('App mounted');
   }, []);
 
+  // Reset Health on Stage Change or Game Start
+  useEffect(() => {
+    if (gameState === 'playing') {
+      setHealth(100);
+      setSprint(false);
+    }
+  }, [stage, gameState]);
+
+  // Health Decay Logic
+  useEffect(() => {
+    if (gameState === 'playing' && sprint) {
+      healthTimer.current = setInterval(() => {
+        setHealth(prev => {
+          const newHealth = prev - 5;
+          if (newHealth <= 0) {
+            clearInterval(healthTimer.current);
+            setGameState('gameover');
+            return 0;
+          }
+          return newHealth;
+        });
+      }, 500); // 0.5 seconds
+    } else {
+      if (healthTimer.current) clearInterval(healthTimer.current);
+    }
+
+    return () => {
+      if (healthTimer.current) clearInterval(healthTimer.current);
+    };
+  }, [gameState, sprint]);
+
+  const handleWolfCatch = () => {
+    setHealth(prev => {
+      const newHealth = prev - 20;
+      if (newHealth <= 0) {
+        setGameState('gameover');
+        return 0;
+      }
+      return newHealth;
+    });
+  };
+
+  const healPlayer = () => {
+    setHealth(prev => Math.min(100, prev + 20));
+  };
+
   const joystickRef = React.useRef({ x: 0, y: 0 });
 
   return (
@@ -60,32 +110,6 @@ function App() {
             </label>
           </div>
 
-          <div style={{ marginTop: '20px' }}>
-            <div style={{ fontSize: '18px', marginBottom: '10px' }}>Control Type:</div>
-            <label style={{ fontSize: '16px', cursor: 'pointer', marginRight: '20px' }}>
-              <input
-                type="radio"
-                name="controlType"
-                value="keyboard"
-                checked={controlType === 'keyboard'}
-                onChange={(e) => setControlType(e.target.value)}
-                style={{ marginRight: '5px' }}
-              />
-              Keyboard (Arrow Keys)
-            </label>
-            <label style={{ fontSize: '16px', cursor: 'pointer' }}>
-              <input
-                type="radio"
-                name="controlType"
-                value="joystick"
-                checked={controlType === 'joystick'}
-                onChange={(e) => setControlType(e.target.value)}
-                style={{ marginRight: '5px' }}
-              />
-              Joystick (Mobile)
-            </label>
-          </div>
-
           <button
             style={{ marginTop: '20px', fontSize: '16px', padding: '10px 20px', backgroundColor: '#555' }}
             onClick={() => {
@@ -98,6 +122,22 @@ function App() {
           </button>
         </div>
       )}
+      {gameState === 'gameover' && (
+        <div className="start-screen" style={{ backgroundColor: 'rgba(50, 0, 0, 0.9)' }}>
+          <h1 style={{ color: 'red' }}>GAME OVER</h1>
+          <p style={{ fontSize: '24px', marginBottom: '20px' }}>The wolf caught you or you ran out of energy!</p>
+          <button onClick={() => {
+            setHealth(100);
+            setGameState('playing');
+          }}>Try Again</button>
+          <button
+            style={{ marginTop: '20px', backgroundColor: '#555' }}
+            onClick={() => setGameState('start')}
+          >
+            Main Menu
+          </button>
+        </div>
+      )}
       {gameState === 'playing' && (
         <>
           <GameScene
@@ -107,6 +147,10 @@ function App() {
             joystickRef={joystickRef}
             collisionEffect={collisionEffect}
             setHints={setHints}
+            sprint={sprint}
+            setSprint={setSprint}
+            onWolfCatch={handleWolfCatch}
+            onHeal={healPlayer}
           />
           <UI
             stage={stage}
@@ -115,7 +159,8 @@ function App() {
             activeHint={activeHint}
             hintTimeLeft={hintTimeLeft}
             joystickRef={joystickRef}
-            controlType={controlType}
+            health={health}
+            setSprint={setSprint}
           />
         </>
       )}

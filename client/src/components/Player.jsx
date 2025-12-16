@@ -3,16 +3,24 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
 const CELL_SIZE = 2;
-const SPEED = 5;
+const BASE_SPEED = 5 * 0.4; // Reduced by 60%
+const SPRINT_SPEED = BASE_SPEED * 1.2; // 1.2x of base speed
 const ROTATION_SPEED = 3;
 const PLAYER_RADIUS = 0.3;
 
-const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, activeHint, collisionEffect, hintItems, onCollectHint, wingItem, onCollectWing, setFlyTimeLeft }) => {
+const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, activeHint, collisionEffect, hintItems, onCollectHint, wingItem, onCollectWing, healthItems, onCollectHealth, setFlyTimeLeft, sprint, setSprint, isScared }) => {
   const meshRef = useRef();
   const { camera } = useThree();
 
   // Start at 0,0
-  const [position, setPosition] = useState(new THREE.Vector3(0, 0.5, 0));
+  // Start at 0,0 (Grid Coordinates) -> Convert to World Coordinates
+  const [position, setPosition] = useState(() => {
+    const floorSize = size * CELL_SIZE;
+    const offset = (floorSize / 2) - (CELL_SIZE / 2);
+    const startX = 0 * CELL_SIZE - offset;
+    const startZ = 0 * CELL_SIZE - offset;
+    return new THREE.Vector3(startX, 0.5, startZ);
+  });
   const [rotation, setRotation] = useState(0); // in radians
 
   // Report initial position
@@ -21,17 +29,19 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
   }, []);
 
   // Input state
-  const keys = useRef({ w: false, a: false, s: false, d: false });
+  const keys = useRef({ w: false, a: false, s: false, d: false, Shift: false });
 
   React.useEffect(() => {
     const handleKeyDown = (e) => {
-      if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'].includes(e.key)) {
+      if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'Shift'].includes(e.key)) {
         keys.current[e.key === 'ArrowUp' ? 'w' : e.key === 'ArrowLeft' ? 'a' : e.key === 'ArrowDown' ? 's' : e.key === 'ArrowRight' ? 'd' : e.key] = true;
+        if (e.key === 'Shift' && setSprint) setSprint(true);
       }
     };
     const handleKeyUp = (e) => {
-      if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'].includes(e.key)) {
+      if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'Shift'].includes(e.key)) {
         keys.current[e.key === 'ArrowUp' ? 'w' : e.key === 'ArrowLeft' ? 'a' : e.key === 'ArrowDown' ? 's' : e.key === 'ArrowRight' ? 'd' : e.key] = false;
+        if (e.key === 'Shift' && setSprint) setSprint(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -40,7 +50,7 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [setSprint]);
 
   // Intro State
   const [isIntro, setIsIntro] = useState(true);
@@ -58,6 +68,26 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
   // Fly State
   const [isFlying, setIsFlying] = useState(false);
   const flyTimeLeft = useRef(0);
+
+  // Sprint Effect (Sweat drops)
+  const [sweatDrops, setSweatDrops] = useState([]);
+  useFrame((state) => {
+    if (keys.current.Shift || sprint) {
+      if (Math.random() < 0.1) {
+        setSweatDrops(prev => [...prev, {
+          id: Math.random(),
+          pos: new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.8, (Math.random() - 0.5) * 0.5),
+          life: 1.0
+        }]);
+      }
+    }
+
+    setSweatDrops(prev => prev.map(drop => ({
+      ...drop,
+      pos: drop.pos.clone().add(new THREE.Vector3(0, 0.02, 0.02)), // Move up and back
+      life: drop.life - 0.05
+    })).filter(drop => drop.life > 0));
+  });
 
   useFrame((state, delta) => {
     if (!meshRef.current) return;
@@ -158,8 +188,8 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
 
         // Arms up
         if (leftArmRef.current && rightArmRef.current) {
-          leftArmRef.current.rotation.z = Math.PI - 0.5; // Hands up
-          rightArmRef.current.rotation.z = -Math.PI + 0.5;
+          leftArmRef.current.rotation.x = -Math.PI / 2; // Arms up
+          rightArmRef.current.rotation.x = -Math.PI / 2;
         }
         return;
       } else {
@@ -173,21 +203,24 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
     let moveVec = new THREE.Vector3();
     let isMoving = false;
     let newRotation = rotation;
-    const moveSpeed = SPEED * delta;
+
+    // Determine current speed
+    const isSprinting = keys.current.Shift || sprint;
+    const currentSpeed = isSprinting ? SPRINT_SPEED : BASE_SPEED;
+    const moveSpeed = currentSpeed * delta;
 
     if (activeHint !== 'zoomout') {
       // Rotation
       if (keys.current.a) rotChange += ROTATION_SPEED * delta;
       if (keys.current.d) rotChange -= ROTATION_SPEED * delta;
 
-      // Joystick Rotation (X axis) with deadzone and reduced sensitivity
+      // Joystick Rotation (X axis) with deadzone and sensitivity
       if (joystickRef && joystickRef.current) {
         const joyX = joystickRef.current.x;
-        const deadzone = 0.2; // Ignore small movements
-        const sensitivity = 0.5; // Reduce rotation speed to 50%
+        const deadzone = 0.2;
+        const sensitivity = 0.8; // Increased for faster rotation
 
         if (Math.abs(joyX) > deadzone) {
-          // Apply deadzone and sensitivity
           const adjustedX = (Math.abs(joyX) - deadzone) / (1 - deadzone) * Math.sign(joyX);
           rotChange -= adjustedX * ROTATION_SPEED * delta * sensitivity;
         }
@@ -307,6 +340,22 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       }
     }
 
+    // Check Health Collection
+    if (healthItems && onCollectHealth) {
+      const floorSize = size * CELL_SIZE;
+      const offset = (floorSize / 2) - (CELL_SIZE / 2);
+
+      healthItems.forEach(item => {
+        const itemX = item.x * CELL_SIZE - offset;
+        const itemZ = item.y * CELL_SIZE - offset;
+        const dist = new THREE.Vector2(position.x - itemX, position.z - itemZ).length();
+
+        if (dist < 0.8) {
+          onCollectHealth(item.id);
+        }
+      });
+    }
+
     // Fly Logic
     if (isFlying) {
       flyTimeLeft.current -= delta;
@@ -350,8 +399,8 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       meshRef.current.position.y = 0.5 + Math.sin(time) * 0.05;
 
       if (leftFootRef.current && rightFootRef.current) {
-        leftFootRef.current.position.z = Math.sin(time) * 0.2;
-        rightFootRef.current.position.z = Math.sin(time + Math.PI) * 0.2;
+        leftFootRef.current.position.z = Math.sin(time) * 0.1;
+        rightFootRef.current.position.z = Math.sin(time + Math.PI) * 0.1;
       }
 
       if (leftArmRef.current && rightArmRef.current) {
@@ -361,8 +410,8 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
     } else if (isFlying) {
       // Flying pose
       if (leftFootRef.current && rightFootRef.current) {
-        leftFootRef.current.position.z = -0.2;
-        rightFootRef.current.position.z = -0.2;
+        leftFootRef.current.position.z = 0;
+        rightFootRef.current.position.z = 0;
       }
       if (leftArmRef.current && rightArmRef.current) {
         leftArmRef.current.rotation.x = 0;
@@ -380,8 +429,8 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       if (leftArmRef.current && rightArmRef.current) {
         leftArmRef.current.rotation.x = 0;
         rightArmRef.current.rotation.x = 0;
-        leftArmRef.current.rotation.z = 0;
-        rightArmRef.current.rotation.z = 0;
+        leftArmRef.current.rotation.z = 0.5; // Reset to initial spread
+        rightArmRef.current.rotation.z = -0.5; // Reset to initial spread
       }
     }
 
@@ -536,10 +585,18 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
 
   return (
     <group ref={meshRef}>
+      {/* Sprint Sweat Drops */}
+      {sweatDrops.map(drop => (
+        <mesh key={drop.id} position={drop.pos}>
+          <sphereGeometry args={[0.03, 8, 8]} />
+          <meshStandardMaterial color="cyan" transparent opacity={drop.life} />
+        </mesh>
+      ))}
+
       {/* Body */}
       <mesh castShadow position={[0, 0, 0]}>
         <sphereGeometry args={[PLAYER_RADIUS, 32, 32]} />
-        <meshStandardMaterial ref={bodyMaterialRef} color="hotpink" />
+        <meshStandardMaterial ref={bodyMaterialRef} color={isScared ? "#ffaaaa" : "hotpink"} />
       </mesh>
       {/* Eyes */}
       <mesh position={[-0.1, 0.1, -0.25]}>
@@ -553,32 +610,32 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       {/* Ears (Rabbit) */}
       <mesh position={[-0.15, 0.45, 0]} rotation={[0, 0, -0.2]}>
         <capsuleGeometry args={[0.08, 0.4, 4, 8]} />
-        <meshStandardMaterial color="hotpink" />
+        <meshStandardMaterial color={isScared ? "#ffaaaa" : "hotpink"} />
       </mesh>
       <mesh position={[0.15, 0.45, 0]} rotation={[0, 0, 0.2]}>
         <capsuleGeometry args={[0.08, 0.4, 4, 8]} />
-        <meshStandardMaterial color="hotpink" />
+        <meshStandardMaterial color={isScared ? "#ffaaaa" : "hotpink"} />
       </mesh>
       {/* Feet */}
       <mesh ref={leftFootRef} position={[-0.15, -0.25, 0]}>
         <sphereGeometry args={[0.1, 16, 16]} />
-        <meshStandardMaterial color="hotpink" />
+        <meshStandardMaterial color={isScared ? "#ffaaaa" : "hotpink"} />
       </mesh>
       <mesh ref={rightFootRef} position={[0.15, -0.25, 0]}>
         <sphereGeometry args={[0.1, 16, 16]} />
-        <meshStandardMaterial color="hotpink" />
+        <meshStandardMaterial color={isScared ? "#ffaaaa" : "hotpink"} />
       </mesh>
       {/* Arms (Hands) with Pivot */}
-      <group ref={leftArmRef} position={[-0.25, 0.1, 0]}>
-        <mesh position={[0, -0.25, 0.15]}>
+      <group ref={leftArmRef} position={[-0.35, 0.1, 0]} rotation={[0, 0, 0.5]}>
+        <mesh position={[0, -0.25, 0]}>
           <sphereGeometry args={[0.08, 16, 16]} />
-          <meshStandardMaterial color="hotpink" />
+          <meshStandardMaterial color={isScared ? "#ffaaaa" : "hotpink"} />
         </mesh>
       </group>
-      <group ref={rightArmRef} position={[0.25, 0.1, 0]}>
-        <mesh position={[0, -0.25, 0.15]}>
+      <group ref={rightArmRef} position={[0.35, 0.1, 0]} rotation={[0, 0, -0.5]}>
+        <mesh position={[0, -0.25, 0]}>
           <sphereGeometry args={[0.08, 16, 16]} />
-          <meshStandardMaterial color="hotpink" />
+          <meshStandardMaterial color={isScared ? "#ffaaaa" : "hotpink"} />
         </mesh>
       </group>
 

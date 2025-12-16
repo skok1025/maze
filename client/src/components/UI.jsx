@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Joystick } from 'react-joystick-component';
 
-const UI = ({ stage, hints, activateHint, activeHint, hintTimeLeft, joystickRef, controlType }) => {
+const UI = ({ stage, hints, activateHint, activeHint, hintTimeLeft, joystickRef, health, setSprint }) => {
     const handleMove = (e) => {
         if (joystickRef) {
             // e.x and e.y are relative values
@@ -18,6 +18,41 @@ const UI = ({ stage, hints, activateHint, activeHint, hintTimeLeft, joystickRef,
     return (
         <div className="ui-overlay">
             <div className="stage-info">Stage: {stage}</div>
+            {/* Health Bar */}
+            <div style={{
+                position: 'absolute',
+                bottom: '20px',
+                left: '20px',
+                width: '200px',
+                height: '20px',
+                backgroundColor: '#333',
+                border: '2px solid white',
+                borderRadius: '10px',
+                overflow: 'hidden'
+            }}>
+                <div style={{
+                    width: `${health}%`,
+                    height: '100%',
+                    backgroundColor: health > 50 ? 'lime' : health > 20 ? 'orange' : 'red',
+                    transition: 'width 0.2s ease-out, background-color 0.2s'
+                }} />
+                <div style={{
+                    position: 'absolute',
+                    top: '0',
+                    left: '0',
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    color: 'black',
+                    textShadow: 'none'
+                }}>
+                    {health}%
+                </div>
+            </div>
             {activeHint && (
                 <div style={{
                     position: 'absolute',
@@ -51,144 +86,59 @@ const UI = ({ stage, hints, activateHint, activeHint, hintTimeLeft, joystickRef,
                 </button>
             </div>
 
-            {/* Show Joystick only if controlType is 'joystick' */}
-            {controlType === 'joystick' && (
-                <div style={{ position: 'absolute', bottom: '50px', right: '50px', pointerEvents: 'auto' }}>
-                    <Joystick
-                        size={100}
-                        sticky={false}
-                        baseColor="#EEEEEE"
-                        stickColor="#BBBBBB"
-                        move={handleMove}
-                        stop={handleStop}
-                    />
-                </div>
-            )}
+            {/* Joystick (Always visible) */}
+            <div style={{ position: 'absolute', bottom: '50px', right: '50px', pointerEvents: 'auto', display: 'flex', alignItems: 'flex-end' }}>
+                {/* Run Button */}
+                <button
+                    onTouchStart={() => setSprint(true)}
+                    onTouchEnd={() => setSprint(false)}
+                    onMouseDown={() => setSprint(true)}
+                    onMouseUp={() => setSprint(false)}
+                    onMouseLeave={() => setSprint(false)}
+                    style={{
+                        width: '60px',
+                        height: '60px',
+                        borderRadius: '50%',
+                        backgroundColor: 'rgba(255, 0, 0, 0.5)',
+                        color: 'white',
+                        border: '2px solid white',
+                        marginRight: '20px',
+                        fontSize: '16px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        touchAction: 'none'
+                    }}
+                >
+                    RUN
+                </button>
+                <Joystick
+                    size={100}
+                    sticky={false}
+                    baseColor="#EEEEEE"
+                    stickColor="#BBBBBB"
+                    move={handleMove}
+                    stop={handleStop}
+                />
+            </div>
 
-            {/* Show keyboard controls hint if controlType is 'keyboard' */}
-            {controlType === 'keyboard' && (
+            {/* Controls Guide (PC Only) */}
+            {!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && (
                 <div style={{
                     position: 'absolute',
-                    bottom: '50px',
-                    right: '50px',
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 60px)',
-                    gridTemplateRows: 'repeat(2, 60px)',
-                    gap: '5px'
+                    top: '80px',
+                    left: '20px',
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    color: 'white',
+                    fontSize: '14px',
+                    textAlign: 'left',
+                    pointerEvents: 'none'
                 }}>
-                    {/* Top row - only up arrow */}
-                    <div></div>
-                    <button
-                        onTouchStart={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: 1 };
-                        }}
-                        onTouchEnd={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: 0 };
-                        }}
-                        onMouseDown={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: 1 };
-                        }}
-                        onMouseUp={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: 0 };
-                        }}
-                        style={{
-                            width: '60px',
-                            height: '60px',
-                            fontSize: '24px',
-                            backgroundColor: 'rgba(255,255,255,0.8)',
-                            border: '2px solid #333',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            userSelect: 'none',
-                            touchAction: 'none'
-                        }}
-                    >
-                        ▲
-                    </button>
-                    <div></div>
-
-                    {/* Bottom row - left, down, right */}
-                    <button
-                        onTouchStart={() => {
-                            if (joystickRef) joystickRef.current = { x: -1, y: 0 };
-                        }}
-                        onTouchEnd={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: 0 };
-                        }}
-                        onMouseDown={() => {
-                            if (joystickRef) joystickRef.current = { x: -1, y: 0 };
-                        }}
-                        onMouseUp={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: 0 };
-                        }}
-                        style={{
-                            width: '60px',
-                            height: '60px',
-                            fontSize: '24px',
-                            backgroundColor: 'rgba(255,255,255,0.8)',
-                            border: '2px solid #333',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            userSelect: 'none',
-                            touchAction: 'none'
-                        }}
-                    >
-                        ◄
-                    </button>
-                    <button
-                        onTouchStart={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: -1 };
-                        }}
-                        onTouchEnd={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: 0 };
-                        }}
-                        onMouseDown={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: -1 };
-                        }}
-                        onMouseUp={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: 0 };
-                        }}
-                        style={{
-                            width: '60px',
-                            height: '60px',
-                            fontSize: '24px',
-                            backgroundColor: 'rgba(255,255,255,0.8)',
-                            border: '2px solid #333',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            userSelect: 'none',
-                            touchAction: 'none'
-                        }}
-                    >
-                        ▼
-                    </button>
-                    <button
-                        onTouchStart={() => {
-                            if (joystickRef) joystickRef.current = { x: 1, y: 0 };
-                        }}
-                        onTouchEnd={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: 0 };
-                        }}
-                        onMouseDown={() => {
-                            if (joystickRef) joystickRef.current = { x: 1, y: 0 };
-                        }}
-                        onMouseUp={() => {
-                            if (joystickRef) joystickRef.current = { x: 0, y: 0 };
-                        }}
-                        style={{
-                            width: '60px',
-                            height: '60px',
-                            fontSize: '24px',
-                            backgroundColor: 'rgba(255,255,255,0.8)',
-                            border: '2px solid #333',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            userSelect: 'none',
-                            touchAction: 'none'
-                        }}
-                    >
-                        ►
-                    </button>
+                    <div style={{ marginBottom: '5px', fontWeight: 'bold', borderBottom: '1px solid #aaa', paddingBottom: '2px' }}>Controls</div>
+                    <div>Move: WASD / Arrows</div>
+                    <div>Run: Shift</div>
                 </div>
             )}
         </div>
