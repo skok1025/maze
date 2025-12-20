@@ -33,12 +33,16 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
 
   React.useEffect(() => {
     const handleKeyDown = (e) => {
+      // Debug log
+      // console.log("Key Down:", e.key);
       if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'Shift'].includes(e.key)) {
         keys.current[e.key === 'ArrowUp' ? 'w' : e.key === 'ArrowLeft' ? 'a' : e.key === 'ArrowDown' ? 's' : e.key === 'ArrowRight' ? 'd' : e.key] = true;
         if (e.key === 'Shift' && setSprint) setSprint(true);
       }
     };
     const handleKeyUp = (e) => {
+      // Debug log
+      // console.log("Key Up:", e.key);
       if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'Shift'].includes(e.key)) {
         keys.current[e.key === 'ArrowUp' ? 'w' : e.key === 'ArrowLeft' ? 'a' : e.key === 'ArrowDown' ? 's' : e.key === 'ArrowRight' ? 'd' : e.key] = false;
         if (e.key === 'Shift' && setSprint) setSprint(false);
@@ -50,12 +54,12 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [setSprint]);
+  }, []);
 
   // Intro State
   const [isIntro, setIsIntro] = useState(true);
   const introStartTime = useRef(null);
-  const smoothedCameraRotation = useRef(0);
+  // smoothedCameraRotation.current = 0; // Not enabling this one yet as logic changed
 
   // Victory State
   const [isVictory, setIsVictory] = useState(false);
@@ -112,61 +116,45 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       }
 
       const elapsed = state.clock.elapsedTime - introStartTime.current;
-      const totalDuration = 5.0;
+      const totalDuration = 5.0; // 5 seconds cinematic intro
+
+      // Skip on key press
+      if (Object.values(keys.current).some(v => v)) {
+        setIsIntro(false);
+        return;
+      }
 
       if (elapsed < totalDuration) {
         const t = elapsed / totalDuration;
-        // Ease in-out cubic for smooth acceleration and deceleration
         const smoothT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-        // --- Animation Parameters ---
-
-        // 1. Orbit Center: From Maze Center (0,0,0) to Player Position
-        // This makes the camera focus shift from the maze to the player naturally.
         const startCenter = new THREE.Vector3(0, 0, 0);
         const endCenter = position.clone();
         const currCenter = new THREE.Vector3().lerpVectors(startCenter, endCenter, smoothT);
 
-        // 2. Radius (Distance from Center): From Far to Close (baseDist)
-        const startRadius = size * 3.0; // See entire maze
+        const startRadius = size * 2.5;
         const endRadius = baseDist;
         const currRadius = startRadius + (endRadius - startRadius) * smoothT;
 
-        // 3. Height: From High to Low (baseHeight)
-        const startHeight = size * 3.0;
+        const startHeight = size * 2.5;
         const endHeight = baseHeight;
         const currHeight = startHeight + (endHeight - startHeight) * smoothT;
 
-        // 4. Angle: Spiral Motion
-        // Start from Front-ish (Math.PI) to Back (0) relative to player rotation
-        // Adding extra rotation (Math.PI * 2) makes it swirl more dynamically
-        const startAngle = rotation + Math.PI; // Front view
-        const endAngle = rotation + Math.PI * 4; // Spin 2 times and land on Back (0 mod 2PI) -> Wait, Back is 0 relative to rotation.
-        // Let's just go from PI to 0.
-        const angleStartVal = rotation + Math.PI;
-        const angleEndVal = rotation;
-        const currAngle = angleStartVal + (angleEndVal - angleStartVal) * smoothT;
+        const startAngle = rotation + Math.PI;
+        const endAngle = rotation;
+        const currAngle = startAngle + (endAngle - startAngle) * smoothT;
 
-        // 5. Calculate Camera Position
-        // X = CenterX + sin(angle) * radius
-        // Z = CenterZ + cos(angle) * radius
         const camX = currCenter.x + Math.sin(currAngle) * currRadius;
         const camZ = currCenter.z + Math.cos(currAngle) * currRadius;
         const camY = currCenter.y + currHeight;
 
         camera.position.set(camX, camY, camZ);
 
-        // 6. Look At Target: From Maze Center to Player Head
         const startLook = new THREE.Vector3(0, 0, 0);
         const endLook = position.clone().add(new THREE.Vector3(0, 0.5, 0));
         const currLook = new THREE.Vector3().lerpVectors(startLook, endLook, smoothT);
 
         camera.lookAt(currLook);
-
-        // Breathing animation
-        const time = state.clock.elapsedTime * 2;
-        meshRef.current.position.y = 0.5 + Math.sin(time) * 0.02;
-
         return;
       } else {
         setIsIntro(false);
@@ -259,6 +247,7 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       }
 
       isMoving = moveVec.lengthSq() > 0;
+      // if (isMoving) console.log("Moving!", moveVec); // Debug
     }
 
     if (isMoving) {
@@ -302,8 +291,30 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
           setIsVictory(true);
         }
       } else {
-        // Collision Hit!
-        if (collisionEffect) {
+        // Wall Slide Logic
+        // Try sliding along X
+        const slideX = position.clone().add(new THREE.Vector3(moveVec.x, 0, 0));
+        let moved = false;
+
+        if (!checkCollision(slideX) && Math.abs(moveVec.x) > 0.001) {
+          setPosition(slideX);
+          meshRef.current.position.copy(slideX);
+          if (onPositionChange) onPositionChange(slideX);
+          moved = true;
+        }
+        // Try sliding along Z
+        else {
+          const slideZ = position.clone().add(new THREE.Vector3(0, 0, moveVec.z));
+          if (!checkCollision(slideZ) && Math.abs(moveVec.z) > 0.001) {
+            setPosition(slideZ);
+            meshRef.current.position.copy(slideZ);
+            if (onPositionChange) onPositionChange(slideZ);
+            moved = true;
+          }
+        }
+
+        // Collision Hit Effect (only trigger if we "hit" hard enough or didn't slide smoothly)
+        if (collisionEffect && !moved) {
           collisionIntensity.current = 1.0;
         }
       }
@@ -446,10 +457,10 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
       // Normal Follow Logic
 
       // Smooth Camera Rotation
-      const rotLerpFactor = 3.0 * delta;
-      smoothedCameraRotation.current += (newRotation - smoothedCameraRotation.current) * rotLerpFactor;
+      // const rotLerpFactor = 3.0 * delta;
+      // smoothedCameraRotation.current += (newRotation - smoothedCameraRotation.current) * rotLerpFactor;
 
-      const camRot = smoothedCameraRotation.current;
+      const camRot = newRotation;
 
       // Calculate offset relative to rotation
       let dist = baseDist;
@@ -545,6 +556,8 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
         const hitColor = new THREE.Color("red");
         bodyMaterialRef.current.color.lerpColors(baseColor, hitColor, collisionIntensity.current);
       }
+    } else if (bodyMaterialRef.current) {
+      bodyMaterialRef.current.color.set(isScared ? "#ffaaaa" : "hotpink");
     }
   });
 
@@ -566,7 +579,7 @@ const Player = ({ mazeData, size, setGameState, onPositionChange, joystickRef, a
     // Reset Victory
     setIsVictory(false);
     victoryStartTime.current = null;
-    smoothedCameraRotation.current = 0;
+    // smoothedCameraRotation.current = 0;
 
     // Reset Collision
     collisionIntensity.current = 0;

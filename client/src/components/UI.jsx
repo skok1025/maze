@@ -18,6 +18,7 @@ const UI = ({ stage, hints, activateHint, activeHint, hintTimeLeft, joystickRef,
     return (
         <div className="ui-overlay">
             <div className="stage-info">Stage: {stage}</div>
+
             {/* Health Bar */}
             <div style={{
                 position: 'absolute',
@@ -53,6 +54,8 @@ const UI = ({ stage, hints, activateHint, activeHint, hintTimeLeft, joystickRef,
                     {health}%
                 </div>
             </div>
+
+            {/* Hint Timer Display */}
             {activeHint && (
                 <div style={{
                     position: 'absolute',
@@ -68,6 +71,8 @@ const UI = ({ stage, hints, activateHint, activeHint, hintTimeLeft, joystickRef,
                     {hintTimeLeft}
                 </div>
             )}
+
+            {/* Hints Info and Buttons */}
             <div className="hints-info" style={{ position: 'absolute', top: '20px', right: '20px', display: 'flex', alignItems: 'center' }}>
                 <span style={{ marginRight: '10px' }}>Hints: {hints}</span>
                 <button

@@ -49,10 +49,8 @@ const Wolf = ({ startPos, playerPos, mazeData, size, onCatch, onChaseUpdate }) =
         // Pause Logic
         if (isPaused.current) return;
 
-        // Chase Logic
-        const direction = new THREE.Vector3().subVectors(playerPos, position).normalize();
+        // Chase Logic - Smarter Pathfinding
         const moveDist = WOLF_SPEED * delta;
-        const nextPos = position.clone().add(direction.multiplyScalar(moveDist));
 
         // Collision Detection (Same as Player)
         const CELL_SIZE = 2;
@@ -77,21 +75,47 @@ const Wolf = ({ startPos, playerPos, mazeData, size, onCatch, onChaseUpdate }) =
             return false;
         };
 
-        if (!checkCollision(nextPos)) {
-            setPosition(nextPos);
-            meshRef.current.position.copy(nextPos);
-        } else {
-            // Try sliding
-            const nextPosX = position.clone().add(new THREE.Vector3(direction.x, 0, 0).multiplyScalar(moveDist));
-            if (!checkCollision(nextPosX)) {
-                setPosition(nextPosX);
-                meshRef.current.position.copy(nextPosX);
+
+        // 1. Calculate ideal direction
+        const idealDir = new THREE.Vector3().subVectors(playerPos, position).normalize();
+
+        // 2. Try moving directly
+        const tryMove = (dir) => {
+            const potentialPos = position.clone().add(dir.clone().multiplyScalar(moveDist));
+            if (!checkCollision(potentialPos)) {
+                setPosition(potentialPos);
+                meshRef.current.position.copy(potentialPos);
+                return true;
+            }
+            return false;
+        };
+
+        if (!tryMove(idealDir)) {
+            // 3. Blocked! Try sliding (Wall Friction for Wolf)
+            // Project direction onto axes
+            const axisX = new THREE.Vector3(Math.sign(idealDir.x), 0, 0);
+            const axisZ = new THREE.Vector3(0, 0, Math.sign(idealDir.z));
+
+            // Prefer the axis with larger component
+            let dirs = [];
+            if (Math.abs(idealDir.x) > Math.abs(idealDir.z)) {
+                dirs = [axisX, axisZ];
             } else {
-                const nextPosZ = position.clone().add(new THREE.Vector3(0, 0, direction.z).multiplyScalar(moveDist));
-                if (!checkCollision(nextPosZ)) {
-                    setPosition(nextPosZ);
-                    meshRef.current.position.copy(nextPosZ);
+                dirs = [axisZ, axisX];
+            }
+
+            let moved = false;
+            for (let dir of dirs) {
+                if (tryMove(dir)) {
+                    moved = true;
+                    break;
                 }
+            }
+
+            // 4. If still stuck, try random wiggle to get unstuck
+            if (!moved) {
+                const randomDir = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
+                tryMove(randomDir);
             }
         }
 

@@ -1,22 +1,49 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
 import { Text } from '@react-three/drei';
+import { generateTexture } from '../utils/textureGenerator';
+import Decorations from './Decorations';
 
 const WALL_HEIGHT = 2;
 const CELL_SIZE = 2;
 
 const Maze = ({ mazeData, size, theme, hintItems, wingItem, healthItems }) => {
+    // Generate Textures
+    const wallTexture = useMemo(() => {
+        try {
+            const tex = generateTexture(theme.wallTexture, theme.wall, theme.wallDetail);
+            // tex.magFilter = THREE.NearestFilter; // Optional: for pixel art look
+            return tex;
+        } catch (e) {
+            console.error("Failed to generate wall texture", e);
+            return null;
+        }
+    }, [theme]);
+
+    const floorTexture = useMemo(() => {
+        try {
+            const tex = generateTexture(theme.floorTexture, theme.floor, theme.floorDetail);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(size, size); // Repeat texture across the floor
+            return tex;
+        } catch (e) {
+            console.error("Failed to generate floor texture", e);
+            return null;
+        }
+    }, [theme, size]);
+
     const walls = useMemo(() => {
         const wallGeometries = [];
-        const wallMaterial = new THREE.MeshStandardMaterial({ color: theme.wall });
+        const wallMaterial = new THREE.MeshStandardMaterial({
+            map: wallTexture,
+            color: 'white' // Map controls color mostly, but we can tint if needed. Best to use white so texture shows true colors.
+        });
 
         mazeData.forEach((row, y) => {
             row.forEach((cell, x) => {
                 const cx = x * CELL_SIZE;
                 const cy = y * CELL_SIZE;
-
-                // Floor
-                // We can just use one big plane for floor, but for now let's keep it simple.
 
                 // Walls
                 const thickness = 0.2;
@@ -57,7 +84,7 @@ const Maze = ({ mazeData, size, theme, hintItems, wingItem, healthItems }) => {
             });
         });
         return wallGeometries;
-    }, [mazeData, theme]);
+    }, [mazeData, theme, wallTexture]);
 
     // Solve Maze to find path
     const solutionPath = useMemo(() => {
@@ -101,7 +128,7 @@ const Maze = ({ mazeData, size, theme, hintItems, wingItem, healthItems }) => {
         <group position={[-offset, 0, -offset]}>
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[offset, 0, offset]} receiveShadow>
                 <planeGeometry args={[floorSize + 10, floorSize + 10]} />
-                <meshStandardMaterial color={theme.floor} />
+                <meshStandardMaterial map={floorTexture} color="white" />
             </mesh>
             {walls}
 
@@ -227,6 +254,9 @@ const Maze = ({ mazeData, size, theme, hintItems, wingItem, healthItems }) => {
                 {/* Base Glow */}
                 <pointLight position={[0, 2, 0]} color="#00ff00" intensity={5} distance={10} decay={2} />
             </group>
+
+            {/* Theme Decorations */}
+            <Decorations size={size} theme={theme} mazeData={mazeData} />
         </group>
     );
 };
